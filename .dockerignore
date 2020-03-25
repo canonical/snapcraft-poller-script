@@ -1,0 +1,18 @@
+# Don't include caches, logs and documentation
+*.log
+.circleci
+.codecov
+.git
+.github
+.gitignore
+.vscode
+.docker-project
+cache.sqlite
+renovate.json
+README.md
+HACKING.md
+LICENSE
+
+# Environemnt
+.env
+.env.local
