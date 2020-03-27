@@ -1,2 +1,4 @@
 canonicalwebteam.launchpad==0.2.8
+python-dateutil==2.8.1
 requests==2.23.0
+ruamel.yaml==0.16.10
