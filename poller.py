@@ -70,12 +70,25 @@ def needs_building(snap, logging):
         )
         return False
 
+    logging.debug(f"Checking if the repo has been updated since last build")
+    try:
+        if github.has_repo_changed_since(gh_owner, gh_repo, last_build):
+            logging.debug(
+                f"Snap {snap_name} repo has changed since last build"
+            )
+            return True
+    except InvalidGitHubRepo as e:
+        logging.debug(f"Snap {snap_name} SKIPPED: {str(e)}")
+        return False
+
     logging.debug(f"Getting defined parts for snap {snap_name}")
     parts = github.get_defined_parts(gh_owner, gh_repo, yaml_file)
 
-    return helper.has_parts_changed(
-        github, snap_name, parts, last_build, logging
-    )
+    if helper.has_parts_changed(github, snap_name, parts, last_build, logging):
+        logging.debug(f"Snap {snap_name} parts needs building")
+        return True
+
+    return False
 
 
 if __name__ == "__main__":
@@ -109,11 +122,15 @@ if __name__ == "__main__":
     for snap in helper.get_all_snaps(launchpad, logging):
         try:
             if needs_building(snap, logging):
-                logging.info(f"Building snap {snap['store_name']}")
-                # launchpad.build_snap(snap_name)
-                logging.warning(
-                    f"####### {snap['store_name']} would be build #######"
-                )
+                logging.debug(f"Snap {snap['store_name']} needs building")
+
+                if launchpad.is_snap_building(snap["store_name"]):
+                    logging.debug(
+                        f"Snap {snap['store_name']} is already being build"
+                    )
+                else:
+                    logging.warning(f"Snap {snap['store_name']} is building")
+                    launchpad.build_snap(snap["store_name"])
         except Exception as e:
             logging.error(
                 f"An error occurrent with snap {snap['store_name']}: {str(e)}"
