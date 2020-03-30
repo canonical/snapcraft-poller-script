@@ -4,14 +4,15 @@ import argparse
 import datetime
 import logging.config
 import os
-import dateutil.parser
+import time
 
+import dateutil.parser
 from canonicalwebteam.launchpad import Launchpad
 from requests import Session
 
-from src.exceptions import InvalidGitHubRepo
-from src.github import GitHub
 from src import helper
+from src.exceptions import GitHubRateLimit, InvalidGitHubRepo
+from src.github import GitHub
 
 launchpad = Launchpad(
     username="build.snapcraft.io",
@@ -22,9 +23,10 @@ launchpad = Launchpad(
 
 github = GitHub(os.getenv("GITHUB_SNAPCRAFT_USER_TOKEN"), Session())
 
-# Dates
-now = datetime.datetime.now()
-yesterday = now - dateutil.relativedelta.relativedelta(days=1)
+# Skip Snaps built in the last 24 hours
+threshold = datetime.datetime.now() - dateutil.relativedelta.relativedelta(
+    days=1
+)
 
 
 def needs_building(snap, logging):
@@ -64,7 +66,7 @@ def needs_building(snap, logging):
         )
         return False
 
-    if last_build > yesterday.timestamp():
+    if last_build > threshold.timestamp():
         logging.info(
             f"Snap {snap_name} SKIPPED: The snap has been recently built"
         )
@@ -116,7 +118,9 @@ if __name__ == "__main__":
     # Disable logs from imported modules
     logging.config.dictConfig({"version": 1, "disable_existing_loggers": True})
     logging.basicConfig(
-        format="%(levelname)s - %(message)s", level=logging_level
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging_level,
     )
 
     for snap in helper.get_all_snaps(launchpad, logging):
@@ -131,6 +135,16 @@ if __name__ == "__main__":
                 else:
                     logging.warning(f"Snap {snap['store_name']} is building")
                     launchpad.build_snap(snap["store_name"])
+        except GitHubRateLimit:
+            wait = github.date_reset_limit - int(
+                datetime.datetime.now().timestamp()
+            )
+            logging.warning(
+                f"GitHub API rate limit exceeded - waiting {wait} seconds"
+            )
+            if wait > 0:
+                time.sleep(wait)
+
         except Exception as e:
             logging.error(
                 f"An error occurrent with snap {snap['store_name']}: {str(e)}"
