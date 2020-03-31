@@ -4,3 +4,11 @@ class InvalidGitHubRepo(Exception):
     """
 
     pass
+
+
+class GitHubRateLimit(Exception):
+    """
+    Exception for API rate limit exceeded
+    """
+
+    pass

@@ -1,7 +1,7 @@
 import dateutil.parser
 from ruamel import yaml
 
-from .exceptions import InvalidGitHubRepo
+from .exceptions import InvalidGitHubRepo, GitHubRateLimit
 
 yaml_parser = yaml.YAML(typ="safe")
 
@@ -27,9 +27,7 @@ class GitHub:
         self.session = session
         self.session.headers["Accept"] = "application/json"
 
-    def _request(
-        self, method="GET", url="", params={}, data={}, raise_exceptions=True
-    ):
+    def _request(self, method="GET", url="", params={}, data={}):
         """
         Makes a raw HTTP request and returns the response.
         """
@@ -41,8 +39,13 @@ class GitHub:
             json=data,
         )
 
-        if raise_exceptions:
-            response.raise_for_status()
+        self.remaining_calls = int(
+            response.headers.get("X-RateLimit-Remaining")
+        )
+        self.date_reset_limit = int(response.headers.get("X-RateLimit-Reset"))
+
+        if self.remaining_calls == 0:
+            raise GitHubRateLimit("GitHub API rate limit exceeded")
 
         return response
 
@@ -59,9 +62,7 @@ class GitHub:
         return False
 
     def get_default_branch(self, owner, repo):
-        response = self._request(
-            "GET", f"repos/{owner}/{repo}", raise_exceptions=False
-        )
+        response = self._request("GET", f"repos/{owner}/{repo}")
         if response.status_code in [404, 403]:
             raise InvalidGitHubRepo("The repo doesn't exists")
 
@@ -76,9 +77,7 @@ class GitHub:
 
         for loc in self.YAML_LOCATIONS:
             response = self._request(
-                "GET",
-                f"repos/{owner}/{repo}/contents/{loc}",
-                raise_exceptions=False,
+                "GET", f"repos/{owner}/{repo}/contents/{loc}",
             )
             if response.status_code in [404, 403]:
                 continue
@@ -98,9 +97,7 @@ class GitHub:
             branch = self.get_default_branch(owner, repo)
 
         response = self._request(
-            "GET",
-            f"repos/{owner}/{repo}/commits/{branch}",
-            raise_exceptions=False,
+            "GET", f"repos/{owner}/{repo}/commits/{branch}",
         )
 
         if response.status_code in [404, 403]:
@@ -189,9 +186,7 @@ class GitHub:
             branch = self.get_default_branch(owner, repo)
 
         response = self._request(
-            "GET",
-            f"repos/{owner}/{repo}/commits/{branch}",
-            raise_exceptions=False,
+            "GET", f"repos/{owner}/{repo}/commits/{branch}",
         )
 
         if response.status_code in [404, 403]:
