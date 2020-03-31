@@ -1,13 +1,16 @@
+import logging
+
 import dateutil.parser
+import logaugment
 from .exceptions import InvalidGitHubRepo
 
 
-def get_all_snaps(launchpad, logging):
+def get_all_snaps(launchpad, logger):
     """
     Return all the snaps in Launchpad created by the user build.snapcraft.io
     """
     page = 1
-    logging.debug(f"Getting Snaps from Launchpad - Page {page}")
+    logger.debug(f"Getting Snaps from Launchpad - Page {page}")
 
     response = launchpad._request(
         "+snaps",
@@ -15,49 +18,51 @@ def get_all_snaps(launchpad, logging):
     ).json()
 
     snaps = response["entries"]
+    logaugment.add(logger, total_snaps=len(snaps))
 
     while "next_collection_link" in response:
         page += 1
-        logging.debug(f"Getting Snaps from Launchpad - Page {page}")
+        logger.debug(f"Getting Snaps from Launchpad - Page {page}")
 
         response = launchpad._request(
             response["next_collection_link"][32:]
         ).json()
 
         snaps.extend(response["entries"])
+        logaugment.add(logger, total_snaps=len(snaps))
 
-    logging.debug(f"Total snaps received: {len(snaps)}")
+    logger.debug(f"Total snaps received: {len(snaps)}")
 
     return snaps
 
 
-def get_last_build_date(launchpad, snap_name, logging):
+def get_last_build_date(launchpad, snap_name, logger):
     """
     Return POSIX timestamp corresponding to the last build
     """
 
-    logging.debug(f"Getting launchpad builds for {snap_name}")
+    logger.debug(f"Getting launchpad builds for {snap_name}")
     builds = launchpad.get_snap_builds(snap_name)
 
     if not builds:
         return None
 
     last_build = builds[0]["datecreated"]
-    logging.debug(f"{snap_name} last build was on {last_build}")
+    logger.debug(f"{snap_name} last build was on {last_build}")
 
     return dateutil.parser.parse(last_build).timestamp()
 
 
-def has_parts_changed(github, snap_name, parts, last_build, logging):
+def has_parts_changed(github, snap_name, parts, last_build, logger):
     """
     Return True if the snap parts have changed since last built
     """
     for part in parts:
-        logging.debug(f"Checking part {part['url']}")
+        logger.debug(f"Checking part {part['url']}")
 
         # We are not supporting GitHub tags
         if part["tag"]:
-            logging.debug(f"Skipping part becuase is ussing GitHub tags")
+            logger.debug(f"Skipping part becuase is ussing GitHub tags")
             continue
 
         part_gh_owner, part_gh_repo = part["url"][19:].split("/")
@@ -66,9 +71,26 @@ def has_parts_changed(github, snap_name, parts, last_build, logging):
             if github.has_repo_changed_since(
                 part_gh_owner, part_gh_repo, last_build, part["branch"]
             ):
-                logging.info(f"Part defined in snap {snap_name} has changed")
+                logger.info(f"Part defined in snap {snap_name} has changed")
                 return True
         except InvalidGitHubRepo as e:
-            logging.debug(f"Skipping part: {str(e)}")
+            logger.debug(f"Skipping part: {str(e)}")
 
     return False
+
+
+def get_logger(level):
+    logger = logging.getLogger("script.output")
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(current_snap)s/%(total_snaps)s"
+        " - %(message)s",
+        "%Y-%m-%d %H:%M:%S",
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(level)
+
+    logaugment.add(logger, current_snap=0, total_snaps=0)
+
+    return logger

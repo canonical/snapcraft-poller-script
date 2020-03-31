@@ -22,29 +22,30 @@ class GitHub:
         "build-aux/snap/snapcraft.yaml",
     ]
 
-    def __init__(self, access_token, session):
-        self.access_token = access_token
+    def __init__(self, access_tokens, session):
+        self.access_tokens = access_tokens
         self.session = session
         self.session.headers["Accept"] = "application/json"
+        self.current_token = 0  # Start using the first token
 
     def _request(self, method="GET", url="", params={}, data={}):
         """
         Makes a raw HTTP request and returns the response.
         """
+        token = self.access_tokens[self.current_token]
+
         response = self.session.request(
             method,
             f"{self.REST_API_URL}/{url}",
-            headers={"Authorization": f"token {self.access_token}"},
+            headers={"Authorization": f"token {token}"},
             params=params,
             json=data,
         )
 
-        self.remaining_calls = int(
-            response.headers.get("X-RateLimit-Remaining")
-        )
-        self.date_reset_limit = int(response.headers.get("X-RateLimit-Reset"))
+        # After the request we set another token for the next one
+        self.current_token = (self.current_token + 1) % len(self.access_tokens)
 
-        if self.remaining_calls == 0:
+        if response.headers.get("X-RateLimit-Remaining") == 0:
             raise GitHubRateLimit("GitHub API rate limit exceeded")
 
         return response
