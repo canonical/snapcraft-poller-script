@@ -125,7 +125,7 @@ if __name__ == "__main__":
 
     # Stats
     skipped_snaps = 0
-    builded_snaps = 0
+    built_snaps = 0
     total_snaps = len(snaps)
     error_snaps = 0
 
@@ -144,7 +144,7 @@ if __name__ == "__main__":
                 else:
                     logger.warning(f"BUILD {snap['store_name']}")
                     launchpad.build_snap(snap["store_name"])
-                    builded_snaps += 1
+                    built_snaps += 1
             else:
                 skipped_snaps += 1
         except GitHubRateLimit as e:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     logger.info(
         "Process finished\n\n"
         f"Total snaps: {str(total_snaps)}\n"
-        f"Builded snaps: {str(builded_snaps)}\n"
+        f"Built snaps: {str(built_snaps)}\n"
         f"Skipped snaps: {str(skipped_snaps)}\n"
         f"Snaps with errors: {str(error_snaps)}\n"
     )
