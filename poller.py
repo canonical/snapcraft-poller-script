@@ -37,23 +37,35 @@ threshold = datetime.datetime.now() - dateutil.relativedelta.relativedelta(
 
 def needs_building(snap, logger):
     if not snap["store_name"]:
-        logger.info(f"Launchpad snap {snap['name']} doesn't have store name")
+        logger.info(
+            f"SKIP {snap['name']}: Launchpad snap doesn't have store name"
+        )
         return False
 
     snap_name = snap["store_name"]
 
     if not snap["store_upload"]:
-        logger.info(f"{snap_name}: Can't be publish from Launchpad")
+        logger.info(f"SKIP {snap_name}: It can't be publish from Launchpad")
         return False
 
     if not github.is_github_repository_url(snap["git_repository_url"]):
-        logger.info(f"{snap_name}: Is not ussing GitHub")
+        logger.info(f"SKIP {snap_name}: It's not ussing GitHub")
+        return False
+
+    last_build = helper.get_last_build_date(launchpad, snap_name, logger)
+
+    if not last_build:
+        logger.info(f"SKIP {snap_name}: The snap has never been built")
+        return False
+
+    if last_build > threshold.timestamp():
+        logger.info(f"SKIP {snap_name}: The snap has been recently built")
         return False
 
     gh_link = snap["git_repository_url"][19:]
     gh_owner, gh_repo = gh_link.split("/")
 
-    logger.debug(f"Verifying snap {snap_name} with GitHub repo {gh_link}")
+    logger.debug(f"Verifying snapcraft.yaml in GitHub repo {gh_link}")
 
     try:
         yaml_file = github.get_snapcraft_yaml_location(gh_owner, gh_repo)
@@ -61,28 +73,17 @@ def needs_building(snap, logger):
             gh_owner, gh_repo, yaml_file, snap_name
         )
     except InvalidGitHubRepo as e:
-        logger.info(f"Snap {snap_name} SKIPPED: {str(e)}")
-        return False
-
-    last_build = helper.get_last_build_date(launchpad, snap_name, logger)
-
-    if not last_build:
-        logger.info(f"Snap {snap_name} SKIPPED: The snap has never been built")
-        return False
-
-    if last_build > threshold.timestamp():
-        logger.info(
-            f"Snap {snap_name} SKIPPED: The snap has been recently built"
-        )
+        logger.info(f"SKIP {snap_name}: {str(e)}")
         return False
 
     logger.debug(f"Checking if the repo has been updated since last build")
+
     try:
         if github.has_repo_changed_since(gh_owner, gh_repo, last_build):
             logger.debug(f"Snap {snap_name} repo has changed since last build")
             return True
     except InvalidGitHubRepo as e:
-        logger.debug(f"Snap {snap_name} SKIPPED: {str(e)}")
+        logger.info(f"SKIP {snap_name}: {str(e)}")
         return False
 
     logger.debug(f"Getting defined parts for snap {snap_name}")
@@ -118,8 +119,15 @@ if __name__ == "__main__":
         logging_level = logging.DEBUG
 
     logger = helper.get_logger(logging_level)
+
     snaps = helper.get_all_snaps(launchpad, logger)
     current_snap = 0
+
+    # Stats
+    skipped_snaps = 0
+    built_snaps = 0
+    total_snaps = len(snaps)
+    error_snaps = 0
 
     for snap in snaps:
         current_snap += 1
@@ -134,8 +142,11 @@ if __name__ == "__main__":
                         f"Snap {snap['store_name']} is already being build"
                     )
                 else:
-                    logger.warning(f"Snap {snap['store_name']} is building")
+                    logger.warning(f"BUILD {snap['store_name']}")
                     launchpad.build_snap(snap["store_name"])
+                    built_snaps += 1
+            else:
+                skipped_snaps += 1
         except GitHubRateLimit as e:
             logger.error("GitHub API rate limit exceeded")
             # Raise the exception to abort the script and catch it on Sentry
@@ -149,6 +160,13 @@ if __name__ == "__main__":
             # Send this exception to Sentry but script will continue
             capture_exception(e)
 
-            logger.error(
-                f"An error occurrent with snap {snap['store_name']}: {str(e)}"
-            )
+            logger.error(f"SKIP {snap['store_name']} - Error: {str(e)}")
+            error_snaps += 1
+
+    logger.info(
+        "Process finished\n\n"
+        f"Total snaps: {str(total_snaps)}\n"
+        f"Built snaps: {str(built_snaps)}\n"
+        f"Skipped snaps: {str(skipped_snaps)}\n"
+        f"Snaps with errors: {str(error_snaps)}\n"
+    )
