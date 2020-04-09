@@ -4,6 +4,8 @@ import argparse
 import datetime
 import logging.config
 import os
+from email.message import EmailMessage
+from smtplib import SMTP
 
 import dateutil.parser
 import logaugment
@@ -170,3 +172,25 @@ if __name__ == "__main__":
         f"Skipped snaps: {str(skipped_snaps)}\n"
         f"Snaps with errors: {str(error_snaps)}\n"
     )
+
+    # Send email if configured
+    smtp_server = os.getenv("SMTP_SERVER")
+
+    if smtp_server:
+        msg = EmailMessage()
+        msg["Subject"] = "Daily report - Snapcraft poller script"
+        msg["From"] = "build-poller-bot@snapcraft.io"
+        msg["To"] = "build-poller-bot@snapcraft.io"
+
+        msg.set_content(
+            "These are the statistics of the last execution:\n\n"
+            f"Total snaps: {str(total_snaps)}\n"
+            f"Built snaps: {str(built_snaps)}\n"
+            f"Skipped snaps: {str(skipped_snaps)}\n"
+            f"Snaps with errors: {str(error_snaps)}\n\n"
+            "Love,\nPoller Script."
+        )
+
+        server = SMTP(smtp_server)
+        server.send_message(msg)
+        server.quit()
