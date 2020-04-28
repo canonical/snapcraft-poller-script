@@ -1,3 +1,4 @@
+import os
 import logging
 
 import dateutil.parser
@@ -12,8 +13,8 @@ def get_all_snaps(launchpad, logger):
     page = 1
     logger.debug(f"Getting Snaps from Launchpad - Page {page}")
 
-    response = launchpad._request(
-        "+snaps",
+    response = launchpad.request(
+        "https://api.launchpad.net/devel/+snaps",
         params={"ws.op": "findByOwner", "owner": "/~build.snapcraft.io"},
     ).json()
 
@@ -24,9 +25,7 @@ def get_all_snaps(launchpad, logger):
         page += 1
         logger.debug(f"Getting Snaps from Launchpad - Page {page}")
 
-        response = launchpad._request(
-            response["next_collection_link"][32:]
-        ).json()
+        response = launchpad.request(response["next_collection_link"]).json()
 
         snaps.extend(response["entries"])
         logaugment.add(logger, total_snaps=len(snaps))
