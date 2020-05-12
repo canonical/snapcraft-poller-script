@@ -45,7 +45,7 @@ class GitHub:
         # After the request we set another token for the next one
         self.current_token = (self.current_token + 1) % len(self.access_tokens)
 
-        if response.headers.get("X-RateLimit-Remaining") == 0:
+        if response.headers.get("X-RateLimit-Remaining") == "0":
             raise GitHubRateLimit("GitHub API rate limit exceeded")
 
         return response
@@ -64,6 +64,7 @@ class GitHub:
 
     def get_default_branch(self, owner, repo):
         response = self._request("GET", f"repos/{owner}/{repo}")
+
         if response.status_code in [404, 403]:
             raise InvalidGitHubRepo("The repo doesn't exists")
 
