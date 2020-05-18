@@ -1,26 +1,16 @@
 #! /usr/bin/env python3
-
+import csv
 import argparse
-import datetime
 import logging.config
 import os
 from email.message import EmailMessage
 from smtplib import SMTP
 
-import dateutil.parser
 import logaugment
 from canonicalwebteam.launchpad import Launchpad
 from requests import Session
-from sentry_sdk import capture_exception, init
-from sentry_sdk.integrations.logging import ignore_logger
 
 from src import helper
-from src.exceptions import GitHubRateLimit, InvalidGitHubRepo
-from src.github import GitHub
-
-# Set up Sentry
-init(os.getenv("SENTRY_DSN"))
-ignore_logger("script.output")
 
 launchpad = Launchpad(
     username="build.snapcraft.io",
@@ -28,74 +18,6 @@ launchpad = Launchpad(
     secret=os.getenv("LP_API_TOKEN_SECRET"),
     session=Session(),
 )
-
-github = GitHub(os.getenv("GITHUB_SNAPCRAFT_POLLER_TOKENS").split(), Session())
-
-# Skip Snaps built in the last 24 hours
-threshold = datetime.datetime.now() - dateutil.relativedelta.relativedelta(
-    days=1
-)
-
-
-def needs_building(snap, logger):
-    if not snap["store_name"]:
-        logger.info(
-            f"SKIP {snap['name']}: Launchpad snap doesn't have store name"
-        )
-        return False
-
-    snap_name = snap["store_name"]
-
-    if not snap["store_upload"]:
-        logger.info(f"SKIP {snap_name}: It can't be publish from Launchpad")
-        return False
-
-    if not github.is_github_repository_url(snap["git_repository_url"]):
-        logger.info(f"SKIP {snap_name}: It's not ussing GitHub")
-        return False
-
-    last_build = helper.get_last_build_date(launchpad, snap_name, logger)
-
-    if not last_build:
-        logger.info(f"SKIP {snap_name}: The snap has never been built")
-        return False
-
-    if last_build > threshold.timestamp():
-        logger.info(f"SKIP {snap_name}: The snap has been recently built")
-        return False
-
-    gh_link = snap["git_repository_url"][19:]
-    gh_owner, gh_repo = gh_link.split("/")
-
-    logger.debug(f"Verifying snapcraft.yaml in GitHub repo {gh_link}")
-
-    try:
-        yaml_file = github.get_snapcraft_yaml_location(gh_owner, gh_repo)
-        github.verify_snapcraft_yaml_name(
-            gh_owner, gh_repo, yaml_file, snap_name
-        )
-    except InvalidGitHubRepo as e:
-        logger.info(f"SKIP {snap_name}: {str(e)}")
-        return False
-
-    logger.debug(f"Checking if the repo has been updated since last build")
-
-    try:
-        if github.has_repo_changed_since(gh_owner, gh_repo, last_build):
-            logger.debug(f"Snap {snap_name} repo has changed since last build")
-            return True
-    except InvalidGitHubRepo as e:
-        logger.info(f"SKIP {snap_name}: {str(e)}")
-        return False
-
-    logger.debug(f"Getting defined parts for snap {snap_name}")
-    parts = github.get_defined_parts(gh_owner, gh_repo, yaml_file)
-
-    if helper.has_parts_changed(github, snap_name, parts, last_build, logger):
-        logger.debug(f"Snap {snap_name} parts needs building")
-        return True
-
-    return False
 
 
 if __name__ == "__main__":
@@ -126,71 +48,56 @@ if __name__ == "__main__":
     current_snap = 0
 
     # Stats
-    skipped_snaps = 0
-    built_snaps = 0
+    snaps_with_store_name = 0
+    snaps_without_store_name = 0
     total_snaps = len(snaps)
-    error_snaps = 0
+    all_snap_data = []
 
     for snap in snaps:
         current_snap += 1
         logaugment.add(logger, current_snap=current_snap)
 
-        try:
-            if needs_building(snap, logger):
-                logger.debug(f"Snap {snap['store_name']} needs building")
+        if snap["store_name"]:
+            snaps_with_store_name += 1
+            continue
+        else:
+            snaps_without_store_name += 1
 
-                if launchpad.is_snap_building(snap["store_name"]):
-                    logger.debug(
-                        f"Snap {snap['store_name']} is already being build"
-                    )
-                else:
-                    logger.warning(f"BUILD {snap['store_name']}")
-                    launchpad.build_snap(snap["store_name"])
-                    built_snaps += 1
-            else:
-                skipped_snaps += 1
-        except GitHubRateLimit as e:
-            logger.error("GitHub API rate limit exceeded")
-            # Raise the exception to abort the script and catch it on Sentry
-            raise e
-        except Exception as e:
-            # Extra info for Sentry
-            e.snap_launchpad_name = snap["name"]
-            e.snap_name = snap["store_name"]
-            e.snap_github_repo = snap["git_repository_url"]
+            builds = launchpad.get_collection_entries(
+                snap["builds_collection_link"]
+            )
 
-            # Send this exception to Sentry but script will continue
-            capture_exception(e)
+            snap_data = {}
+            snap_data["name"] = snap["name"]
+            snap_data["link"] = snap["web_link"]
+            snap_data["has_builds"] = "Yes" if builds else "No"
+            snap_data["can_upload_to_store"] = snap["can_upload_to_store"]
+            snap_data["date_created"] = snap["date_created"].split("T")[0]
+            snap_data["date_last_modified"] = snap["date_last_modified"].split(
+                "T"
+            )[0]
+            all_snap_data.append(snap_data)
 
-            logger.error(f"SKIP {snap['store_name']} - Error: {str(e)}")
-            error_snaps += 1
+    with open("output.csv", "w") as csvfile:
+        writer = csv.DictWriter(
+            csvfile,
+            fieldnames=[
+                "name",
+                "link",
+                "has_builds",
+                "can_upload_to_store",
+                "date_created",
+                "date_last_modified",
+            ],
+        )
+        writer.writeheader()
+
+        for snap_data in all_snap_data:
+            writer.writerow(snap_data)
 
     logger.info(
         "Process finished\n\n"
         f"Total snaps: {str(total_snaps)}\n"
-        f"Built snaps: {str(built_snaps)}\n"
-        f"Skipped snaps: {str(skipped_snaps)}\n"
-        f"Snaps with errors: {str(error_snaps)}\n"
+        f"Snaps with store name: {str(snaps_with_store_name)}\n"
+        f"Snaps without store name: {str(snaps_without_store_name)}\n"
     )
-
-    # Send email if configured
-    smtp_server = os.getenv("SMTP_SERVER")
-
-    if smtp_server:
-        msg = EmailMessage()
-        msg["Subject"] = "Daily report - Snapcraft poller script"
-        msg["From"] = "build-poller-bot@snapcraft.io"
-        msg["To"] = "build-poller-bot@snapcraft.io"
-
-        msg.set_content(
-            "These are the statistics of the last execution:\n\n"
-            f"Total snaps: {str(total_snaps)}\n"
-            f"Built snaps: {str(built_snaps)}\n"
-            f"Skipped snaps: {str(skipped_snaps)}\n"
-            f"Snaps with errors: {str(error_snaps)}\n\n"
-            "Love,\nPoller Script."
-        )
-
-        server = SMTP(smtp_server)
-        server.send_message(msg)
-        server.quit()
