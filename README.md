@@ -1,3 +1,5 @@
+# ![snapcraft.io](https://assets.ubuntu.com/v1/944b8760-snapcraft-logo-bird.svg?fmt=png&w=50 "Snapcraft") Snapcraft Poller Script
+
 This script is executed regularly in our Kubernetes cluster to trigger builds for snaps that:
 - Parts dependencies defined in the snapcraft.yaml were changed (Only the ones that are GitHub repos)
 - The snap GitHub repo itself was changed since the last build.
