@@ -175,6 +175,8 @@ if __name__ == "__main__":
 
     # Send email if configured
     smtp_server = os.getenv("SMTP_SERVER")
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASS")
 
     if smtp_server:
         msg = EmailMessage()
@@ -192,5 +194,10 @@ if __name__ == "__main__":
         )
 
         server = SMTP(smtp_server)
+        if smtp_user and smtp_pass:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
