@@ -175,10 +175,10 @@ class GitHub:
                     gh_part["url"] = (
                         content["parts"][part].get("source").rstrip(".git")
                     )
-                    gh_part["branch"] = content["parts"][part].get(
-                        "source-branch"
-                    )
-                    gh_part["tag"] = content["parts"][part].get("source-tag")
+                    for revision in ("branch", "tag", "commit"):
+                        gh_part[revision] = content["parts"][part].get(
+                            "source-" + revision
+                        )
                     parts.append(gh_part)
 
         return parts
