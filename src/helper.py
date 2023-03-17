@@ -59,9 +59,9 @@ def has_parts_changed(github, snap_name, parts, last_build, logger):
     for part in parts:
         logger.debug(f"Checking part {part['url']}")
 
-        # We are not supporting GitHub tags
-        if part["tag"]:
-            logger.debug(f"Skipping part becuase is ussing GitHub tags")
+        # We are not supporting GitHub tags or commits
+        if part["tag"] or part["commit"]:
+            logger.debug(f"Skipping part because it is using GitHub tag or commit")
             continue
 
         part_gh_owner, part_gh_repo = part["url"][19:].split("/")
