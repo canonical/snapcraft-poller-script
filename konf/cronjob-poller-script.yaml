@@ -1,0 +1,37 @@
+name: cronjob-snapcraft-poller-script
+schedule: "0 5 * * *"
+image: prod-comms.ps5.docker-registry.canonical.com/cronjob-snapcraft-poller-script
+
+env:
+  - name: SENTRY_DSN
+    value: https://d920c219edb44a349c683174e37d26c7@sentry.is.canonical.com//25
+
+  - name: SMTP_SERVER
+    secretKeyRef:
+      key: snapcraft-poller-server
+      name: smtp-auth
+
+  - name: SMTP_USER
+    secretKeyRef:
+      key: snapcraft-poller-user
+      name: smtp-auth
+
+  - name: SMTP_PASS
+    secretKeyRef:
+      key: snapcraft-poller-password
+      name: smtp-auth
+
+  - name: LP_API_TOKEN
+    secretKeyRef:
+      key: lp-api-token
+      name: snapcraft-io
+
+  - name: LP_API_TOKEN_SECRET
+    secretKeyRef:
+      key: lp-api-token-secret
+      name: snapcraft-io
+
+  - name: GITHUB_SNAPCRAFT_POLLER_TOKENS
+    secretKeyRef:
+      key: github-snapcraft-poller-tokens
+      name: snapcraft-io
