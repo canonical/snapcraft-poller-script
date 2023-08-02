@@ -1,6 +1,6 @@
 canonicalwebteam.launchpad==0.8.3
 logaugment==0.1.3
 python-dateutil==2.8.1
-requests==2.25.1
+requests==2.31.0
 ruamel.yaml==0.16.12
 sentry-sdk==0.19.5
